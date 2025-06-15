@@ -9,6 +9,7 @@ from handlers.commands import router as commands_router
 
 
 logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 
 bot = Bot(token=TELEGRAM_TOKEN)

@@ -15,12 +15,12 @@ router = Router()
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-@router.message(commands=["start"])
-async def cmd_start(message: types.Message):
-    await message.answer("Здравствуйте! Я ReceptionAIDesk. Как могу помочь?\n"
-                         "📋 /services — список услуг\n"
-                         "🗓 /book — записаться на сеанс\n"
-                         "📅 /my — мои записи")
+# @router.message(commands=["start"])
+# async def cmd_start(message: types.Message):
+#     await message.answer("Здравствуйте! Я ReceptionAIDesk. Как могу помочь?\n"
+#                          "📋 /services — список услуг\n"
+#                          "🗓 /book — записаться на сеанс\n"
+#                          "📅 /my — мои записи")
 
 # @router.message(commands=["services"])
 # async def cmd_services(message: types.Message):
@@ -29,10 +29,10 @@ async def cmd_start(message: types.Message):
 #     await message.answer(reply)
 
 
-@router.message(commands=["book"])
-async def cmd_book_start(message: types.Message):
-    # FSM: запрашиваем услугу
-    await message.answer("Введите название услуги")
+# @router.message(commands=["book"])
+# async def cmd_book_start(message: types.Message):
+#     # FSM: запрашиваем услугу
+#     await message.answer("Введите название услуги")
     # — установка состояния —
 
 # FSM-хэндлеры для /book: получение названия, даты, времени,
