@@ -1,5 +1,5 @@
 import sqlite3
-from config import DATABASE_PATH
+from configs import DATABASE_PATH
 from typing import List, Dict, Tuple, Any
 
 

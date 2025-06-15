@@ -3,8 +3,8 @@ import asyncio
 from aiogram import Bot, Dispatcher
 from configs import TELEGRAM_TOKEN
 from utils.database import initialize_database
-from handlers.commands import router as commands_router
 from handlers.messages import router as messages_router
+from handlers.commands import router as commands_router
 
 
 
