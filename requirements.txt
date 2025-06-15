@@ -1,12 +1,13 @@
 python-telegram-bot==20.7
 openai
-python-telegram-bot==20.7
-openai
 gspread
 google-api-python-client
 google-auth
-python-dotenv
-aiogram
 gspread
 oauth2client
 google-api-python-client
+python-dotenv==1.0.1
+aiogram==3.17.0
+openai==1.59.5
+config
+tzdata
