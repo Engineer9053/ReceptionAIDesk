@@ -81,3 +81,4 @@ def upsert_services(
         new_row["Description of service"] = description if description is not None else ""
         data.append(new_row)
     return data  # Вернули список с добавленной услугой
+

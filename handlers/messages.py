@@ -15,20 +15,21 @@ router = Router()
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-@router.message_handler(commands=["start"])
+@router.message(commands=["start"])
 async def cmd_start(message: types.Message):
     await message.answer("Здравствуйте! Я ReceptionAIDesk. Как могу помочь?\n"
                          "📋 /services — список услуг\n"
                          "🗓 /book — записаться на сеанс\n"
                          "📅 /my — мои записи")
 
-@router.message_handler(commands=["services"])
-async def cmd_services(message: types.Message):
-    services = sheets.list_services()
-    reply = "Доступные услуги:\n" + "\n".join(f"- {s}" for s in services)
-    await message.answer(reply)
+# @router.message(commands=["services"])
+# async def cmd_services(message: types.Message):
+#     services = sheets.list_services()
+#     reply = "Доступные услуги:\n" + "\n".join(f"- {s}" for s in services)
+#     await message.answer(reply)
 
-@router.message_handler(commands=["book"])
+
+@router.message(commands=["book"])
 async def cmd_book_start(message: types.Message):
     # FSM: запрашиваем услугу
     await message.answer("Введите название услуги")
@@ -37,11 +38,12 @@ async def cmd_book_start(message: types.Message):
 # FSM-хэндлеры для /book: получение названия, даты, времени,
 # запись в календарь и лист, подтверждение пользователю
 
-@router.message_handler(commands=["my"])
-async def cmd_my(message: types.Message):
-    entries = calendar.list_for_user(message.from_user.id)
-    reply = "Ваши записи:\n" + "\n".join(f"{e['summary']} — {e['start']}" for e in entries)
-    await message.answer(reply)
+
+# @router.message(commands=["my"])
+# async def cmd_my(message: types.Message):
+#     entries = calendar.list_for_user(message.from_user.id)
+#     reply = "Ваши записи:\n" + "\n".join(f"{e['summary']} — {e['start']}" for e in entries)
+#     await message.answer(reply)
 @router.message(F.text)
 async def message_text_handler(message: Message) -> None:
 
