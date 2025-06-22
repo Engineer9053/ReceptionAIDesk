@@ -21,7 +21,57 @@ client = gspread.authorize(credentials)
 
 calendar = build("calendar", "v3", credentials=credentials)
 
-def check_free_slots(start_time: str, duration_minutes: int = 0, end_time: str = None, user_timezone: str = "Europe/Kyiv"):
+def create_event(summary: str, description: str, start_time: str, duration_minutes: int, telegram_id: int) -> str:
+    user_timezone = "Europe/Kyiv"
+    local_tz = ZoneInfo(user_timezone)
+    start_local = datetime.fromisoformat(start_time).replace(tzinfo=local_tz)
+    end_local = start_local + timedelta(minutes=duration_minutes)
+
+    start_utc = start_local.astimezone(timezone.utc)
+    end_utc = end_local.astimezone(timezone.utc)
+
+    event = {
+        'summary': summary,
+        'description': description + "(telegram_id:" + str(telegram_id) + ")",
+        'start': {
+            'dateTime': start_utc.isoformat(),
+            'timeZone': user_timezone,
+        },
+        'end': {
+            'dateTime': end_utc.isoformat(),
+            'timeZone': user_timezone,
+        },
+        #'conferenceData': { # генерация ссылки на гугл-мит доступна только для корпоративного аккаунта, как и возможность приглашать гостей не евент
+        #    'createRequest': {
+        #        'requestId': f'meeting-{start_utc.timestamp()}',
+        #        'conferenceSolutionKey': {'type': 'hangoutsMeet'},
+        #    }
+        #},
+        'reminders': {
+            'useDefault': False,
+            'overrides': [
+                {'method': 'popup', 'minutes': 30},
+                {'method': 'email', 'minutes': 30}
+            ]
+        }
+    }
+
+    try:
+        event_result = calendar.events().insert(
+            calendarId=CALENDAR_ID,
+            #conferenceDataVersion=1, # генерация ссылки на гугл-мит доступна только для корпоративного аккаунта, как и возможность приглашать гостей не евент
+            body=event
+        ).execute()
+
+        response = f"Виконано!\nСтворено запис на сеанс з '{start_local}' по {end_local} ({user_timezone}). {summary}"
+
+    except Exception:
+
+        response = "Помилка!\nНа жаль запис не вдалося створити. Спробуй ще раз."
+
+    return response
+
+def check_free_slots(start_time: str, duration_minutes: int = 0, end_time: str = None, user_timezone: str = "Europe/Kyiv", telegram_id: int = 0):
     local_tz = ZoneInfo(user_timezone)
     start_local = datetime.fromisoformat(start_time).replace(tzinfo=local_tz)
     if duration_minutes > 0:
@@ -42,7 +92,10 @@ def check_free_slots(start_time: str, duration_minutes: int = 0, end_time: str =
 
     if duration_minutes > 0: #точечный ответ "да / нет" на вопрос, свободен ли слот, на который хочет записаться клиент
         busy_times = events_result['calendars'][CALENDAR_ID].get('busy', [])
-        return len(busy_times) == 0
+        if len(busy_times) == 0:
+            return f"Слот вільний."
+        else:
+            return f"Нажаль, даний слот зайнято, спробуйте інший."
     else:
         busy_periods = events_result['calendars'][CALENDAR_ID]['busy']
         # Преобразуем в datetime объекты в нужной зоне
@@ -95,64 +148,13 @@ def check_free_slots(start_time: str, duration_minutes: int = 0, end_time: str =
             # Переход на следующий день
             current = datetime.combine((current + timedelta(days=1)).date(), WORK_START, tzinfo=local_tz)
 
-        return [
-            f"{slot_start.strftime('%Y-%m-%d %H:%M')} - {slot_end.strftime('%Y-%m-%d %H:%M')}"
-            for slot_start, slot_end in free_slots
-        ]
+        return "\n".join([
+            f"{i + 1}. {slot_start.strftime('%Y-%m-%d %H:%M')} - {slot_end.strftime('%Y-%m-%d %H:%M')}"
+            for i, (slot_start, slot_end) in enumerate(free_slots)
+        ])
 
 
-def create_event(summary: str, description: str, start_time: str, duration_minutes: int, telegram_id: int) -> str:
-    user_timezone = "Europe/Kyiv"
-    if check_free_slots(start_time, duration_minutes):
-        local_tz = ZoneInfo(user_timezone)
-        start_local = datetime.fromisoformat(start_time).replace(tzinfo=local_tz)
-        end_local = start_local + timedelta(minutes=duration_minutes)
 
-        start_utc = start_local.astimezone(timezone.utc)
-        end_utc = end_local.astimezone(timezone.utc)
-
-        event = {
-            'summary': summary,
-            'description': description + "(telegram_id:" + str(telegram_id) + ")",
-            'start': {
-                'dateTime': start_utc.isoformat(),
-                'timeZone': user_timezone,
-            },
-            'end': {
-                'dateTime': end_utc.isoformat(),
-                'timeZone': user_timezone,
-            },
-            #'conferenceData': { # генерация ссылки на гугл-мит доступна только для корпоративного аккаунта, как и возможность приглашать гостей не евент
-            #    'createRequest': {
-            #        'requestId': f'meeting-{start_utc.timestamp()}',
-            #        'conferenceSolutionKey': {'type': 'hangoutsMeet'},
-            #    }
-            #},
-            'reminders': {
-                'useDefault': False,
-                'overrides': [
-                    {'method': 'popup', 'minutes': 30},
-                    {'method': 'email', 'minutes': 30}
-                ]
-            }
-        }
-
-        try:
-            event_result = calendar.events().insert(
-                calendarId=CALENDAR_ID,
-                #conferenceDataVersion=1, # генерация ссылки на гугл-мит доступна только для корпоративного аккаунта, как и возможность приглашать гостей не евент
-                body=event
-            ).execute()
-
-            response = f"Виконано!\nСтворено запис на сеанс з '{start_local}' по {end_local} ({user_timezone}). {summary}"
-
-        except Exception:
-
-            response = "Помилка!\nНа жаль запис не вдалося створити. Спробуй ще раз."
-    else:
-        response = "Помилка!\nНа жаль на цей час ми не можемо записати вас, оскільки даний слот вже зайнятий. Спробуємо інший слот? Який час буде зручним для Вас?."
-
-    return response
 
 
 def cancel_event(start_time_local: str, end_time_local: str, telegram_id: int, user_timezone: str = "Europe/Kyiv", query: str = None):
