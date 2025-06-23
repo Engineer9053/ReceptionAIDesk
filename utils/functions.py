@@ -190,8 +190,8 @@ def cancel_event(start_time_local: str, end_time_local: str, telegram_id: int, u
             try:
                 event_id = event_row['id']
             except Exception as e:
-                print(f"Событие не найдено: {e}")
-                return "Событие не найдено"
+                print(f"Подію не знайдено: {e}")
+                return "Подію не знайдено"
             """
             Отменяет событие в календаре по его идентификатору.
             :param event_id: Идентификатор события в календаре Google
@@ -199,11 +199,10 @@ def cancel_event(start_time_local: str, end_time_local: str, telegram_id: int, u
             """
             try:
                 calendar.events().delete(calendarId=CALENDAR_ID, eventId=event_id).execute()
-                print(f"Событие {event_id} успешно удалено.")
-                response += f"Событие ({event_row['start']['dateTime']}) успешно удалено. "
+                response += f"Подія ({event_row['start']['dateTime']}) успішно видалена. "
             except Exception as e:
-                print(f"Ошибка при удалении события: {e}")
-                response += f"Ошибка при удалении события ({event_row['start']['dateTime']})"
+                print(f"Помилка при видаленні події: {e}")
+                response += f"Помилка при видаленні події ({event_row['start']['dateTime']})"
 
         return response
 
