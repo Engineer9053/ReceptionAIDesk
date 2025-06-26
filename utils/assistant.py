@@ -214,8 +214,7 @@ def text_assistant(message: Message, client: OpenAI) -> str:
         # ВАЖНО: добавляем assistant-сообщение в правильной структуре
         messages_buffer[telegram_id].append({
             "role": "assistant",
-            "tool_calls": [tc.model_dump() for tc in ai_message.tool_calls],
-            "content": None
+            "tool_calls": [tc.model_dump() for tc in ai_message.tool_calls]
         })
 
         messages_buffer[telegram_id].extend(tool_responses)
@@ -302,8 +301,7 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
         # ВАЖНО: правильный assistant с tool_calls
         messages_buffer[telegram_id].append({
             "role": "assistant",
-            "tool_calls": [tc.model_dump() for tc in ai_message.tool_calls],
-            "content": None
+            "tool_calls": [tc.model_dump() for tc in ai_message.tool_calls]
         })
 
         messages_buffer[telegram_id].extend(tool_responses)
