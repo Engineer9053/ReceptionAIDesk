@@ -1,10 +1,12 @@
 import json
+import pprint
 from io import BytesIO
 from datetime import datetime
 from openai import OpenAI
 from configs import LLM_ID
 from aiogram.types import Message
 from utils.functions import functions_register, read_google_sheet_as_dict
+
 
 messages_buffer = {}
 
@@ -51,8 +53,6 @@ prompt2 += "При запиті на відміну сеансу на конкр
 prompt2 += "При запиті на відміну не уточнюй ім'я та телефон. "
 prompt2 += "При вдалій (або невдалій) операції запису (або відміни запису) завжди давай звіт користувачу в чат що зроблено (або не зроблено). "
 prompt2 += "Відповідай клієнту на тій мові, на якій він до тебе звернувся. "
-
-now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 functions = [
     {
@@ -152,126 +152,177 @@ functions = [
 
 
 def text_assistant(message: Message, client: OpenAI) -> str:
-
     telegram_id = message.from_user.id
     text = message.text
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     if telegram_id not in messages_buffer:
-
         messages_buffer[telegram_id] = []
-    
-    messages_buffer[telegram_id].append(
-        {
-            "role": "user",
-            "content": text
-        }
-    )
+
+    messages_buffer[telegram_id].append({
+        "role": "user",
+        "content": text
+    })
 
     price = str(read_google_sheet_as_dict(sheet_name="Price"))
+
+    base_system_prompt = {
+        "role": "system",
+        "content": f"{prompt1}{price}. {prompt2}. Поточна дата/час: {now}."
+    }
+
+    # Первый запрос
     response = client.chat.completions.create(
-        messages=[
-            {
-                "role": "system",
-                "content": f"{prompt1}"
-                           f"{price}."
-                           f" {prompt2}. "
-                           f"Поточна дата/час: {now}."
-            }
-        ] + messages_buffer[telegram_id],
+        messages=[base_system_prompt] + messages_buffer[telegram_id],
         model=LLM_ID,
         tools=functions
     )
 
     ai_message = response.choices[0].message
-    messages_buffer[telegram_id].append(ai_message)
 
     if ai_message.content:
-
+        messages_buffer[telegram_id].append({
+            "role": "assistant",
+            "content": ai_message.content
+        })
         return ai_message.content
-    
-    if ai_message.tool_calls:
 
-        results = []
+    if ai_message.tool_calls:
+        tool_responses = []
 
         for tool_call in ai_message.tool_calls:
+            try:
+                tool_name = tool_call.function.name
+                tool_args = json.loads(tool_call.function.arguments)
+                tool_args["telegram_id"] = telegram_id
 
-            tool_name = tool_call.function.name
-            tool_args = json.loads(tool_call.function.arguments)
-            tool_args["telegram_id"] = telegram_id
+                result = functions_register[tool_name](**tool_args)
 
-            result = functions_register[tool_name](**tool_args)
-
-            results.append(result)
-
-            messages_buffer[telegram_id].append(
-                {
+                tool_responses.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "content": result
-                }
-            )
-        
-        return "\n\n".join(results)
+                })
+
+            except Exception as e:
+                tool_responses.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": f"Помилка виконання функції {tool_name}: {str(e)}"
+                })
+
+        # ВАЖНО: добавляем assistant-сообщение в правильной структуре
+        messages_buffer[telegram_id].append({
+            "role": "assistant",
+            "tool_calls": [tc.model_dump() for tc in ai_message.tool_calls],
+            "content": None
+        })
+
+        messages_buffer[telegram_id].extend(tool_responses)
+
+        print("🚨 DEBUG: messages going to second OpenAI call:")
+        pprint.pprint(messages_buffer[telegram_id])
+
+        final_response = client.chat.completions.create(
+            messages=[base_system_prompt] + messages_buffer[telegram_id],
+            model=LLM_ID,
+            tools=functions
+        )
+
+        final_message = final_response.choices[0].message
+        messages_buffer[telegram_id].append({
+            "role": "assistant",
+            "content": final_message.content
+        })
+
+        return final_message.content or "Операцію виконано."
+
+    return "Не вдалося отримати відповідь від помічника."
 
 
 def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
-
     telegram_id = message.from_user.id
     text = audio_text
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     if telegram_id not in messages_buffer:
-
         messages_buffer[telegram_id] = []
-    
-    messages_buffer[telegram_id].append(
-        {
-            "role": "user",
-            "content": text
-        }
-    )
+
+    messages_buffer[telegram_id].append({
+        "role": "user",
+        "content": text
+    })
 
     price = str(read_google_sheet_as_dict(sheet_name="Price"))
+
+    base_system_prompt = {
+        "role": "system",
+        "content": f"{prompt1}{price}. {prompt2}. Поточна дата/час: {now}."
+    }
+
     response = client.chat.completions.create(
-        messages=[
-            {
-                "role": "system",
-                "content": f"{prompt1}"
-                           f"{price}."
-                           f" {prompt2}. "
-                           f"Поточна дата/час: {now}."
-            }
-        ] + messages_buffer[telegram_id],
+        messages=[base_system_prompt] + messages_buffer[telegram_id],
         model=LLM_ID,
         tools=functions
     )
 
     ai_message = response.choices[0].message
-    messages_buffer[telegram_id].append(ai_message)
 
     if ai_message.content:
-
+        messages_buffer[telegram_id].append({
+            "role": "assistant",
+            "content": ai_message.content
+        })
         return ai_message.content
-    
-    if ai_message.tool_calls:
 
-        results = []
+    if ai_message.tool_calls:
+        tool_responses = []
 
         for tool_call in ai_message.tool_calls:
+            try:
+                tool_name = tool_call.function.name
+                tool_args = json.loads(tool_call.function.arguments)
+                tool_args["telegram_id"] = telegram_id
 
-            tool_name = tool_call.function.name
-            tool_args = json.loads(tool_call.function.arguments)
-            tool_args["telegram_id"] = telegram_id
+                result = functions_register[tool_name](**tool_args)
 
-            result = functions_register[tool_name](**tool_args)
-
-            results.append(result)
-
-            messages_buffer[telegram_id].append(
-                {
+                tool_responses.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "content": result
-                }
-            )
-        
-        return "\n\n".join(results)
+                })
+
+            except Exception as e:
+                tool_responses.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": f"Помилка при виконанні функції {tool_name}: {str(e)}"
+                })
+
+        # ВАЖНО: правильный assistant с tool_calls
+        messages_buffer[telegram_id].append({
+            "role": "assistant",
+            "tool_calls": [tc.model_dump() for tc in ai_message.tool_calls],
+            "content": None
+        })
+
+        messages_buffer[telegram_id].extend(tool_responses)
+
+        print("🚨 DEBUG: messages going to second OpenAI call:")
+        pprint.pprint(messages_buffer[telegram_id])
+
+        final_response = client.chat.completions.create(
+            messages=[base_system_prompt] + messages_buffer[telegram_id],
+            model=LLM_ID,
+            tools=functions
+        )
+
+        final_message = final_response.choices[0].message
+        messages_buffer[telegram_id].append({
+            "role": "assistant",
+            "content": final_message.content
+        })
+
+        return final_message.content or "Операцію виконано."
+
+    return "Не вдалося отримати відповідь від помічника."
