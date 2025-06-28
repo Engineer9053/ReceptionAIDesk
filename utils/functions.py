@@ -117,10 +117,14 @@ def check_free_slots(start_time: str, duration_minutes: int = 0, end_time: str =
 
         while current < end_local:
             # Пропускаем выходные
-            if current.weekday() >= 5:
+            if current.weekday() == 6:
                 # Переход на следующий день
                 current = datetime.combine((current + timedelta(days=1)).date(), WORK_START, tzinfo=local_tz)
                 continue
+
+            if current.weekday() == 5:
+                WORK_START = time(10, 0)
+                WORK_END = time(18, 0)
 
             day_start = datetime.combine(current.date(), WORK_START, tzinfo=local_tz)
             day_end = datetime.combine(current.date(), WORK_END, tzinfo=local_tz)
