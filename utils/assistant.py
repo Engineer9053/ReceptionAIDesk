@@ -164,11 +164,17 @@ def text_assistant(message: Message, client: OpenAI) -> str:
         "content": text
     })
 
-    price = str(read_google_sheet_as_dict(sheet_name="Price"))
+    price = "\n".join(
+        f"{i + 1}. {service['Service']}. Опис послуги: {service['Description of service']}. Вартість послуги: {service['Price,$']}$"
+        for i, service in enumerate(read_google_sheet_as_dict(sheet_name="Price"))
+    )
 
     base_system_prompt = {
         "role": "system",
-        "content": f"{prompt1}{price}. {prompt2}. Поточна дата/час: {now}."
+        "content": f"{prompt1}\n"
+                   f"{price}.\n"
+                   f"{prompt2}.\n"
+                   f"Поточна дата/час: {now}."
     }
 
     # Первый запрос
@@ -252,11 +258,17 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
         "content": text
     })
 
-    price = str(read_google_sheet_as_dict(sheet_name="Price"))
+    price = "\n".join(
+        f"{i + 1}. {service['Service']}. Опис послуги: {service['Description of service']}. Вартість послуги: {service['Price,$']}$"
+        for i, service in enumerate(read_google_sheet_as_dict(sheet_name="Price"))
+    )
 
     base_system_prompt = {
         "role": "system",
-        "content": f"{prompt1}{price}. {prompt2}. Поточна дата/час: {now}."
+        "content": f"{prompt1}\n"
+                   f"{price}.\n"
+                   f"{prompt2}.\n"
+                   f"Поточна дата/час: {now}."
     }
 
     response = client.chat.completions.create(
