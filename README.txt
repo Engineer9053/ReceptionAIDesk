@@ -1,3 +1,5 @@
+Телеграм бот - @AIReceptionDeskBot
+
 🔧 Архитектура компонентов
 1. Telegram Bot Interface
 Библиотека: python-telegram-bot
