@@ -72,6 +72,7 @@ def create_event(summary: str, description: str, start_time: str, duration_minut
     return response
 
 def check_free_slots(start_time: str, duration_minutes: int = 0, end_time: str = None, user_timezone: str = "Europe/Kyiv", telegram_id: int = 0):
+    print("----------------------------------------------------------------------------- call check_free_slots")
     local_tz = ZoneInfo(user_timezone)
     start_local = datetime.fromisoformat(start_time).replace(tzinfo=local_tz)
     if duration_minutes > 0:
@@ -216,6 +217,7 @@ def find_events_by_time(
             user_timezone: str = "Europe/Kyiv",
             query: str = None
     ):
+
         """
         Ищет события в календаре с учётом часового пояса пользователя.
         :param start_time_local: Локальное время начала (ISO строка, например, "2025-06-12T00:00:00")
@@ -224,6 +226,7 @@ def find_events_by_time(
         :param query: Текст для поиска в summary/description
         :return: Список найденных событий
         """
+        print("----------------------------------------------------------------------------- call find_events_by_time")
         tz = ZoneInfo(user_timezone)
         start_dt = datetime.fromisoformat(start_time_local).replace(tzinfo=tz).astimezone(timezone.utc)
         end_dt = datetime.fromisoformat(end_time_local).replace(tzinfo=tz).astimezone(timezone.utc)
@@ -245,18 +248,23 @@ def find_events_by_time(
 
 
 
-def read_google_sheet_as_dict(sheet_name: str = None) -> List[Dict[str, str]]:
+def read_google_sheet_as_dict(sheet_name: str = "Price", telegram_id: int = 0) -> str:
 
     # Открываем таблицу
     sheet = client.open_by_key(SHEET_ID)
-
+    print("---------------------------------------------------------------------------- call read_google_sheet_as_dict")
     # Выбираем первый лист (или по имени)
     worksheet = sheet.worksheet(sheet_name) if sheet_name else sheet.get_worksheet(0)
 
     # Получаем все строки как список словарей: [{col1: val1, col2: val2, ...}, ...]
     records = worksheet.get_all_records()
 
-    return records
+    output = "\n".join(
+        f"{i + 1}. {service['Service']}. Опис послуги: {service['Description of service']}. Вартість послуги: {service['Price,$']}$"
+        for i, service in enumerate(records)
+    )
+
+    return output
 
 
 def upload_dicts_to_sheet(data: List[Dict], sheet_name: str = None):
@@ -314,7 +322,7 @@ def upsert_services(
 
 functions_register = {
     # "read_google_sheet_as_dict": read_google_sheet_as_dict,
-    # "find_events_by_time": find_events_by_time,
+    "read_google_sheet_as_dict": read_google_sheet_as_dict,
     "check_free_slots": check_free_slots,
     "create_event": create_event,
     "cancel_event": cancel_event
