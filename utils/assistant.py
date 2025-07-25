@@ -245,8 +245,8 @@ def text_assistant(message: Message, client: OpenAI) -> str:
 
         messages_buffer[telegram_id].extend(tool_responses)
 
-        print("🚨 DEBUG: messages going to second OpenAI call:")
-        pprint.pprint(messages_buffer[telegram_id])
+        # print("🚨 DEBUG: messages going to second OpenAI call:")
+        # pprint.pprint(messages_buffer[telegram_id])
 
         final_response = client.chat.completions.create(
             messages=[base_system_prompt] + messages_buffer[telegram_id],
@@ -293,8 +293,8 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
         if isinstance(m.get("content"), str) and m["content"].strip() != "" or m.get("tool_calls")
     ]
 
-    print("📤 Отправляем messages:")
-    pprint.pprint([base_system_prompt] + cleaned_messages)
+    # print("📤 Отправляем messages:")
+    # pprint.pprint([base_system_prompt] + cleaned_messages)
 
     response = client.chat.completions.create(
         messages=[base_system_prompt] + cleaned_messages,
@@ -305,7 +305,6 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
     ai_message = response.choices[0].message
 
     if ai_message.content:
-        print("🚨 DEBUG: content 1:")
         messages_buffer[telegram_id].append({
             "role": "assistant",
             "content": ai_message.content or ""  # всегда добавляем строку, даже если пустую
@@ -323,7 +322,6 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
 
                 result = functions_register[tool_name](**tool_args)
 
-                print("🚨 DEBUG: content 2:")
                 tool_responses.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -351,8 +349,8 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
             if isinstance(m.get("content"), str) and m["content"].strip() != "" or m.get("tool_calls")
         ]
 
-        print("🚨 DEBUG: messages going to second OpenAI call:")
-        pprint.pprint([base_system_prompt] + cleaned_messages)
+        # print("🚨 DEBUG: messages going to second OpenAI call:")
+        # pprint.pprint([base_system_prompt] + cleaned_messages)
 
         final_response = client.chat.completions.create(
             messages=[base_system_prompt] + cleaned_messages,
@@ -365,8 +363,6 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
             "role": "assistant",
             "content": final_message.content
         })
-
-
 
         return final_message.content or "Операцію виконано."
 
