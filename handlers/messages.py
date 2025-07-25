@@ -1,65 +1,80 @@
 import uuid
-import base64
+import asyncio
 from io import BytesIO
 from openai import OpenAI
-from configs import OPENAI_API_KEY, LLM_ID, AUDIO_LLM
+from configs import OPENAI_API_KEY, AUDIO_LLM
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.types import BufferedInputFile
 from utils.assistant import text_assistant, audio_assistant
-from aiogram import Bot, Dispatcher, types
-
-
 
 router = Router()
+# user_id -> {"messages": [str], "task": asyncio.Task}
+user_sessions = {}
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# @router.message(commands=["start"])
-# async def cmd_start(message: types.Message):
-#     await message.answer("Здравствуйте! Я ReceptionAIDesk. Как могу помочь?\n"
-#                          "📋 /services — список услуг\n"
-#                          "🗓 /book — записаться на сеанс\n"
-#                          "📅 /my — мои записи")
-
-# @router.message(commands=["services"])
-# async def cmd_services(message: types.Message):
-#     services = sheets.list_services()
-#     reply = "Доступные услуги:\n" + "\n".join(f"- {s}" for s in services)
-#     await message.answer(reply)
+class FakeMessage:
+    def __init__(self, original_message: Message, new_text: str):
+        self.from_user = original_message.from_user
+        self.chat = original_message.chat
+        self.message_id = original_message.message_id
+        self.text = new_text
+        self.bot = original_message.bot
 
 
-# @router.message(commands=["book"])
-# async def cmd_book_start(message: types.Message):
-#     # FSM: запрашиваем услугу
-#     await message.answer("Введите название услуги")
-    # — установка состояния —
+async def delayed_batch_send(user_id: int, message: Message):
+    try:
+        await asyncio.sleep(10)
 
-# FSM-хэндлеры для /book: получение названия, даты, времени,
-# запись в календарь и лист, подтверждение пользователю
+        all_messages = user_sessions[user_id]["messages"]
+        full_prompt = "\n".join(all_messages)
+
+        mock_message = FakeMessage(message, full_prompt)
+
+        response = text_assistant(mock_message, client)
+
+        if isinstance(response, str):
+            await message.answer(response)
+        elif isinstance(response, BytesIO):
+            await message.answer_photo(
+                BufferedInputFile(response.read(), filename=f"{uuid.uuid4().hex}.png"),
+                caption="Какой-то текст."
+            )
+
+        user_sessions.pop(user_id, None)
+
+    except asyncio.CancelledError:
+        pass
 
 
-# @router.message(commands=["my"])
-# async def cmd_my(message: types.Message):
-#     entries = calendar.list_for_user(message.from_user.id)
-#     reply = "Ваши записи:\n" + "\n".join(f"{e['summary']} — {e['start']}" for e in entries)
-#     await message.answer(reply)
 @router.message(F.text)
 async def message_text_handler(message: Message) -> None:
+    user_id = message.from_user.id
+    text = message.text
 
-    response = text_assistant(message, client)
+    # Создаём сессию, если нет
+    if user_id not in user_sessions:
+        user_sessions[user_id] = {
+            "messages": [],
+            "task": None
+        }
 
-    if isinstance(response, str):
+    # Добавляем сообщение в очередь
+    user_sessions[user_id]["messages"].append(text)
 
-        await message.answer(response)
-    
-    elif isinstance(response, BytesIO):
+    # Перезапускаем таймер, если задача уже была
+    if user_sessions[user_id]["task"]:
+        user_sessions[user_id]["task"].cancel()
 
-        await message.answer_photo(BufferedInputFile(response.read(), filename=f"{uuid.uuid4().hex}.png"), caption="Какой-то текст.")
+    # Запускаем новую задачу ожидания
+    user_sessions[user_id]["task"] = asyncio.create_task(
+        delayed_batch_send(user_id, message)
+    )
+
 
 @router.message(F.voice | F.audio)
 async def handle_audio(message: Message):
-    
     audio = message.voice if message.voice else message.audio
 
     file = await message.bot.get_file(audio.file_id)
@@ -75,12 +90,14 @@ async def handle_audio(message: Message):
 
     audio_text = response.text
 
+    # ВАЖНО: если audio_assistant — sync-функция, НЕ await
     response = audio_assistant(message, audio_text, client)
 
     if isinstance(response, str):
-
         await message.answer(response)
-    
-    elif isinstance(response, BytesIO):
 
-        await message.answer_photo(BufferedInputFile(response.read(), filename=f"{uuid.uuid4().hex}.png"), caption="Какой-то текст.")
+    elif isinstance(response, BytesIO):
+        await message.answer_photo(
+            BufferedInputFile(response.read(), filename=f"{uuid.uuid4().hex}.png"),
+            caption="Какой-то текст."
+        )

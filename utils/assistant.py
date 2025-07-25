@@ -266,16 +266,18 @@ def text_assistant(message: Message, client: OpenAI) -> str:
 
 
 def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
+    if not audio_text or not audio_text.strip():
+        return "Не вдалося розпізнати голос. Будь ласка, повторіть ще раз."
     telegram_id = message.from_user.id
-    text = audio_text
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 
     if telegram_id not in messages_buffer:
         messages_buffer[telegram_id] = []
 
     messages_buffer[telegram_id].append({
         "role": "user",
-        "content": text
+        "content": audio_text.strip()
     })
 
     base_system_prompt = {
@@ -285,8 +287,17 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
                    f"Поточна дата/час: {now}."
     }
 
+    # очищаем историю от пустых сообщений
+    cleaned_messages = [
+        m for m in messages_buffer[telegram_id]
+        if isinstance(m.get("content"), str) and m["content"].strip() != "" or m.get("tool_calls")
+    ]
+
+    print("📤 Отправляем messages:")
+    pprint.pprint([base_system_prompt] + cleaned_messages)
+
     response = client.chat.completions.create(
-        messages=[base_system_prompt] + messages_buffer[telegram_id],
+        messages=[base_system_prompt] + cleaned_messages,
         model=LLM_ID,
         tools=functions
     )
@@ -294,9 +305,10 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
     ai_message = response.choices[0].message
 
     if ai_message.content:
+        print("🚨 DEBUG: content 1:")
         messages_buffer[telegram_id].append({
             "role": "assistant",
-            "content": ai_message.content
+            "content": ai_message.content or ""  # всегда добавляем строку, даже если пустую
         })
         return ai_message.content
 
@@ -311,6 +323,7 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
 
                 result = functions_register[tool_name](**tool_args)
 
+                print("🚨 DEBUG: content 2:")
                 tool_responses.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -333,11 +346,16 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
 
         messages_buffer[telegram_id].extend(tool_responses)
 
+        cleaned_messages = [
+            m for m in messages_buffer[telegram_id]
+            if isinstance(m.get("content"), str) and m["content"].strip() != "" or m.get("tool_calls")
+        ]
+
         print("🚨 DEBUG: messages going to second OpenAI call:")
-        pprint.pprint(messages_buffer[telegram_id])
+        pprint.pprint([base_system_prompt] + cleaned_messages)
 
         final_response = client.chat.completions.create(
-            messages=[base_system_prompt] + messages_buffer[telegram_id],
+            messages=[base_system_prompt] + cleaned_messages,
             model=LLM_ID,
             tools=functions
         )
@@ -347,6 +365,8 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
             "role": "assistant",
             "content": final_message.content
         })
+
+
 
         return final_message.content or "Операцію виконано."
 
