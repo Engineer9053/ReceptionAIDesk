@@ -1,11 +1,9 @@
 import json
 import gspread
-import os
 from datetime import datetime, timedelta, time, timezone
 from configs import CALENDAR_ID, GOOGLE_CREDENTIALS_JSON, SHEET_ID
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from oauth2client.service_account import ServiceAccountCredentials
 from zoneinfo import ZoneInfo
 from typing import List, Dict, Optional
 

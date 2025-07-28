@@ -5,7 +5,7 @@ from datetime import datetime
 from openai import OpenAI
 from configs import LLM_ID
 from aiogram.types import Message
-from utils.functions import functions_register, read_google_sheet_as_dict
+from utils.functions import functions_register
 
 
 messages_buffer = {}
@@ -46,7 +46,8 @@ prompt2 += "4. Щоб скасувати запис в календарі вик
            "4.1. start_time: str (дата/час старту інтервалу пошуку в форматі 'YYYY-MM-DD HH:MM:SS') " \
            "4.2. end_time: str (дата/час кінця інтервалу пошуку в форматі 'YYYY-MM-DD HH:MM:SS') " \
            "4.3. query: str (назва послуги (муже бути не вказана користувачем)) " \
-           "4.4. telegram_id: int (цю інформацію бери з сессії діалогу, та не запитуй у клієнта telegram_id)"
+           "4.4. telegram_id: int (цю інформацію бери з сессії діалогу, та не запитуй у клієнта telegram_id)" \
+           "4.5. Обов'язково перед видаленням запису надавай клієнту деталі запису що ти знайшов і тільки потім видаляй, якщо клієнт дасть згоду!"
 
 prompt2 += "При запиті хоче записанися на обслуговування, тобі впершу чергу потрібно визначитись з датою та часом та впевнитися, що вона вільна для запису. " \
            "Краще перепитай, якщо не на 100% впевнений, яку дату та час хоче клієнт." \

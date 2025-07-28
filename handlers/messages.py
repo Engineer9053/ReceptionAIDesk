@@ -25,17 +25,25 @@ class FakeMessage:
 
 async def delayed_batch_send(user_id: int, message: Message):
     try:
-        await asyncio.sleep(10)
+        await asyncio.sleep(9)
 
         all_messages = user_sessions[user_id]["messages"]
         full_prompt = "\n".join(all_messages)
 
         mock_message = FakeMessage(message, full_prompt)
 
+        # ✨ ЭФФЕКТ "печатает..."
+        await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+
+        # ⏳ Ждать будто бот "печатает"
+        # Можно сделать задержку пропорциональную длине
+        await asyncio.sleep(min(len(full_prompt) * 0.04, 4))
+
         response = text_assistant(mock_message, client)
 
         if isinstance(response, str):
             await message.answer(response)
+
         elif isinstance(response, BytesIO):
             await message.answer_photo(
                 BufferedInputFile(response.read(), filename=f"{uuid.uuid4().hex}.png"),
