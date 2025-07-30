@@ -246,8 +246,8 @@ def text_assistant(message: Message, client: OpenAI) -> str:
 
         messages_buffer[telegram_id].extend(tool_responses)
 
-        # print("🚨 DEBUG: messages going to second OpenAI call:")
-        # pprint.pprint(messages_buffer[telegram_id])
+        print("🚨 DEBUG: messages going to second OpenAI call:")
+        pprint.pprint(messages_buffer[telegram_id])
 
         final_response = client.chat.completions.create(
             messages=[base_system_prompt] + messages_buffer[telegram_id],
@@ -350,8 +350,8 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
             if isinstance(m.get("content"), str) and m["content"].strip() != "" or m.get("tool_calls")
         ]
 
-        # print("🚨 DEBUG: messages going to second OpenAI call:")
-        # pprint.pprint([base_system_prompt] + cleaned_messages)
+        print("🚨 DEBUG: messages going to second OpenAI call:")
+        pprint.pprint([base_system_prompt] + cleaned_messages)
 
         final_response = client.chat.completions.create(
             messages=[base_system_prompt] + cleaned_messages,

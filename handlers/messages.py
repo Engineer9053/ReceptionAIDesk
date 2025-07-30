@@ -9,7 +9,6 @@ from aiogram.types import BufferedInputFile
 from utils.assistant import text_assistant, audio_assistant
 
 router = Router()
-# user_id -> {"messages": [str], "task": asyncio.Task}
 user_sessions = {}
 
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -32,11 +31,11 @@ async def delayed_batch_send(user_id: int, message: Message):
 
         mock_message = FakeMessage(message, full_prompt)
 
-        # ✨ ЭФФЕКТ "печатает..."
+        # ЭФФЕКТ "печатает..."
         await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
 
-        # ⏳ Ждать будто бот "печатает"
-        # Можно сделать задержку пропорциональную длине
+        # Ждать будто бот "печатает"
+        # задержка пропорциональная длинне
         await asyncio.sleep(min(len(full_prompt) * 0.04, 4))
 
         response = text_assistant(mock_message, client)
@@ -98,7 +97,6 @@ async def handle_audio(message: Message):
 
     audio_text = response.text
 
-    # ВАЖНО: если audio_assistant — sync-функция, НЕ await
     response = audio_assistant(message, audio_text, client)
 
     if isinstance(response, str):
