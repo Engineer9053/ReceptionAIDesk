@@ -1,3 +1,17 @@
+# Telegram Bot with OpenAI
+
+This is a Python bot using:
+- `python-telegram-bot`
+- `OpenAI API`
+- `Google Calendar`
+
+## How to run
+
+```bash
+python bot.py
+```
+
+## Details
 Телеграм бот - @AIReceptionDeskBot
 
 🔧 Архитектура компонентов
@@ -77,4 +91,6 @@ Telegram Bot Token
 OpenAI API Key
 
 Google Service Account JSON
+
+
 
