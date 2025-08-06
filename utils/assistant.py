@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import json
 import pprint
 from io import BytesIO
 from datetime import datetime
-from openai import OpenAI
+from openai import OpenAI, BadRequestError
 from configs import LLM_ID
 from aiogram.types import Message
 from utils.functions import functions_register
@@ -177,6 +179,35 @@ functions = [
 ]
 
 
+def clean_messages(messages: list) -> list:
+    """Удаляет пустые или нестроковые сообщения, но сохраняет tool_calls."""
+    return [
+        m for m in messages
+        if (isinstance(m.get("content"), str) and m["content"].strip()) or m.get("tool_calls")
+    ]
+
+def safe_openai_call(client: OpenAI, messages: list, retries: int = 1) -> str | None:
+    """Безопасный вызов OpenAI с повтором и очисткой сообщений при ошибке."""
+    for attempt in range(retries + 1):
+        try:
+            return client.chat.completions.create(
+                messages=messages,
+                model=LLM_ID,
+                tools=functions
+            )
+        except BadRequestError as e:
+            if attempt < retries:
+                print(f"⚠️ Ошибка OpenAI: {e}. Пробуем ещё раз после очистки…")
+                messages = clean_messages(messages)
+                continue
+            else:
+                print("❌ Повтор не помог. Ошибка запроса:", e)
+                return None
+        except Exception as e:
+            print("❌ Неизвестная ошибка OpenAI:", e)
+            return None
+
+
 def text_assistant(message: Message, client: OpenAI) -> str:
     telegram_id = message.from_user.id
     text = message.text
@@ -192,18 +223,13 @@ def text_assistant(message: Message, client: OpenAI) -> str:
 
     base_system_prompt = {
         "role": "system",
-        "content": f"Поточна дата/час: {now}.\n"
-                   f"{prompt1}.\n"
-                   f"{prompt2}."
-
+        "content": f"Поточна дата/час: {now}.\n{prompt1}.\n{prompt2}."
     }
 
-    # Первый запрос
-    response = client.chat.completions.create(
-        messages=[base_system_prompt] + messages_buffer[telegram_id],
-        model=LLM_ID,
-        tools=functions
-    )
+    messages_to_send = [base_system_prompt] + messages_buffer[telegram_id]
+    response = safe_openai_call(client, messages_to_send, retries=1)
+    if not response:
+        return "Помилка при виклику AI. Спробуйте ще раз пізніше."
 
     ai_message = response.choices[0].message
 
@@ -216,7 +242,6 @@ def text_assistant(message: Message, client: OpenAI) -> str:
 
     if ai_message.tool_calls:
         tool_responses = []
-
         for tool_call in ai_message.tool_calls:
             try:
                 tool_name = tool_call.function.name
@@ -238,7 +263,6 @@ def text_assistant(message: Message, client: OpenAI) -> str:
                     "content": f"Помилка виконання функції {tool_name}: {str(e)}"
                 })
 
-        # ВАЖНО: добавляем assistant-сообщение в правильной структуре
         messages_buffer[telegram_id].append({
             "role": "assistant",
             "content": "",
@@ -250,13 +274,13 @@ def text_assistant(message: Message, client: OpenAI) -> str:
         print("🚨 DEBUG: messages going to second OpenAI call:")
         pprint.pprint(messages_buffer[telegram_id])
 
-        final_response = client.chat.completions.create(
-            messages=[base_system_prompt] + messages_buffer[telegram_id],
-            model=LLM_ID,
-            tools=functions
+        second_response = safe_openai_call(
+            client, [base_system_prompt] + messages_buffer[telegram_id], retries=1
         )
+        if not second_response:
+            return "Не вдалося завершити запит до AI після виклику функцій."
 
-        final_message = final_response.choices[0].message
+        final_message = second_response.choices[0].message
         messages_buffer[telegram_id].append({
             "role": "assistant",
             "content": final_message.content
@@ -267,12 +291,13 @@ def text_assistant(message: Message, client: OpenAI) -> str:
     return "Не вдалося отримати відповідь від помічника."
 
 
+
 def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
     if not audio_text or not audio_text.strip():
         return "Не вдалося розпізнати голос. Будь ласка, повторіть ще раз."
+
     telegram_id = message.from_user.id
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
 
     if telegram_id not in messages_buffer:
         messages_buffer[telegram_id] = []
@@ -284,34 +309,28 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
 
     base_system_prompt = {
         "role": "system",
-        "content": f"Поточна дата/час: {now}.\n"
-                   f"{prompt1}.\n"
-                   f"{prompt2}."
+        "content": f"Поточна дата/час: {now}.\n{prompt1}.\n{prompt2}."
     }
 
-    # очищаем историю от пустых сообщений
-    cleaned_messages = [
-        m for m in messages_buffer[telegram_id]
-        if isinstance(m.get("content"), str) and m["content"].strip() != "" or m.get("tool_calls")
-    ]
+    cleaned_messages = clean_messages(messages_buffer[telegram_id])
 
-    # print("📤 Отправляем messages:")
-    # pprint.pprint([base_system_prompt] + cleaned_messages)
-
-    response = client.chat.completions.create(
-        messages=[base_system_prompt] + cleaned_messages,
-        model=LLM_ID,
-        tools=functions
-    )
+    try:
+        response = client.chat.completions.create(
+            messages=[base_system_prompt] + cleaned_messages,
+            model=LLM_ID,
+            tools=functions
+        )
+    except Exception as e:
+        return f"Помилка під час звернення до AI: {str(e)}"
 
     ai_message = response.choices[0].message
 
-    if ai_message.content:
+    if ai_message.content and ai_message.content.strip():
         messages_buffer[telegram_id].append({
             "role": "assistant",
-            "content": ai_message.content or ""  # всегда добавляем строку, даже если пустую
+            "content": ai_message.content.strip()
         })
-        return ai_message.content
+        return ai_message.content.strip()
 
     if ai_message.tool_calls:
         tool_responses = []
@@ -337,7 +356,6 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
                     "content": f"Помилка при виконанні функції {tool_name}: {str(e)}"
                 })
 
-        # ВАЖНО: правильный assistant с tool_calls
         messages_buffer[telegram_id].append({
             "role": "assistant",
             "content": "",
@@ -346,26 +364,26 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
 
         messages_buffer[telegram_id].extend(tool_responses)
 
-        cleaned_messages = [
-            m for m in messages_buffer[telegram_id]
-            if isinstance(m.get("content"), str) and m["content"].strip() != "" or m.get("tool_calls")
-        ]
+        cleaned_messages = clean_messages(messages_buffer[telegram_id])
 
-        print("🚨 DEBUG: messages going to second OpenAI call:")
-        pprint.pprint([base_system_prompt] + cleaned_messages)
-
-        final_response = client.chat.completions.create(
-            messages=[base_system_prompt] + cleaned_messages,
-            model=LLM_ID,
-            tools=functions
-        )
+        try:
+            final_response = client.chat.completions.create(
+                messages=[base_system_prompt] + cleaned_messages,
+                model=LLM_ID,
+                tools=functions
+            )
+        except Exception as e:
+            return f"Помилка під час завершального запиту до AI: {str(e)}"
 
         final_message = final_response.choices[0].message
-        messages_buffer[telegram_id].append({
-            "role": "assistant",
-            "content": final_message.content
-        })
 
-        return final_message.content or "Операцію виконано."
+        if final_message.content and final_message.content.strip():
+            messages_buffer[telegram_id].append({
+                "role": "assistant",
+                "content": final_message.content.strip()
+            })
+            return final_message.content.strip()
+
+        return "Операцію виконано."
 
     return "Не вдалося отримати відповідь від помічника."
