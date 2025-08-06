@@ -209,6 +209,7 @@ def safe_openai_call(client: OpenAI, messages: list, retries: int = 1) -> str | 
 
 
 def text_assistant(message: Message, client: OpenAI) -> str:
+    MAX_HISTORY = 20
     telegram_id = message.from_user.id
     text = message.text
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -220,6 +221,7 @@ def text_assistant(message: Message, client: OpenAI) -> str:
         "role": "user",
         "content": text
     })
+    messages_buffer[telegram_id] = messages_buffer[telegram_id][-MAX_HISTORY:]
 
     base_system_prompt = {
         "role": "system",
@@ -238,6 +240,7 @@ def text_assistant(message: Message, client: OpenAI) -> str:
             "role": "assistant",
             "content": ai_message.content
         })
+        messages_buffer[telegram_id] = messages_buffer[telegram_id][-MAX_HISTORY:]
         return ai_message.content
 
     if ai_message.tool_calls:
@@ -268,6 +271,7 @@ def text_assistant(message: Message, client: OpenAI) -> str:
             "content": "",
             "tool_calls": [tc.model_dump() for tc in ai_message.tool_calls]
         })
+        messages_buffer[telegram_id] = messages_buffer[telegram_id][-MAX_HISTORY:]
 
         messages_buffer[telegram_id].extend(tool_responses)
 
@@ -285,6 +289,7 @@ def text_assistant(message: Message, client: OpenAI) -> str:
             "role": "assistant",
             "content": final_message.content
         })
+        messages_buffer[telegram_id] = messages_buffer[telegram_id][-MAX_HISTORY:]
 
         return final_message.content or "Операцію виконано."
 
@@ -293,6 +298,7 @@ def text_assistant(message: Message, client: OpenAI) -> str:
 
 
 def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
+    MAX_HISTORY = 20
     if not audio_text or not audio_text.strip():
         return "Не вдалося розпізнати голос. Будь ласка, повторіть ще раз."
 
@@ -306,6 +312,7 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
         "role": "user",
         "content": audio_text.strip()
     })
+    messages_buffer[telegram_id] = messages_buffer[telegram_id][-MAX_HISTORY:]
 
     base_system_prompt = {
         "role": "system",
@@ -330,6 +337,7 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
             "role": "assistant",
             "content": ai_message.content.strip()
         })
+        messages_buffer[telegram_id] = messages_buffer[telegram_id][-MAX_HISTORY:]
         return ai_message.content.strip()
 
     if ai_message.tool_calls:
@@ -361,6 +369,7 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
             "content": "",
             "tool_calls": [tc.model_dump() for tc in ai_message.tool_calls]
         })
+        messages_buffer[telegram_id] = messages_buffer[telegram_id][-MAX_HISTORY:]
 
         messages_buffer[telegram_id].extend(tool_responses)
 
@@ -382,6 +391,7 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
                 "role": "assistant",
                 "content": final_message.content.strip()
             })
+            messages_buffer[telegram_id] = messages_buffer[telegram_id][-MAX_HISTORY:]
             return final_message.content.strip()
 
         return "Операцію виконано."
