@@ -116,13 +116,45 @@ functions = [
                         "type": "string",
                         "description": f"telegram_id клієнта",
                     },
-                    "duration_minutes": {
-                        "type": "number",
-                        "description": "Тривалість сеансу."
+                    "user_timezone": {
+                        "type": "string",
+                        "description": f"Часовий пояс у форматі 'Europe/Kyiv'",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Текст події, для точкового пошуку."
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_events_by_time",
+            "description": "Функція повертає перелік сеансів користувача, що були заплановані раніше.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start_time_local": {
+                        "type": "string",
+                        "description": f"Дата початку пошуку у форматі 'YYYY-MM-DD HH:MM:SS'",
+                    },
+                    "end_time_local": {
+                        "type": "string",
+                        "description": f"Дата кінця пошуку у форматі 'YYYY-MM-DD HH:MM:SS'",
+                    },
+                    "telegram_id": {
+                        "type": "string",
+                        "description": f"telegram_id клієнта",
                     },
                     "user_timezone": {
                         "type": "string",
                         "description": f"Часовий пояс у форматі 'Europe/Kyiv'",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Текст події, для точкового пошуку."
                     }
                 }
             }
@@ -209,7 +241,7 @@ def safe_openai_call(client: OpenAI, messages: list, retries: int = 1) -> str | 
 
 
 def text_assistant(message: Message, client: OpenAI) -> str:
-    MAX_HISTORY = 20
+    MAX_HISTORY = 15
     telegram_id = message.from_user.id
     text = message.text
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -253,10 +285,16 @@ def text_assistant(message: Message, client: OpenAI) -> str:
 
                 result = functions_register[tool_name](**tool_args)
 
+                # 🔹 Сериализуем словарь в JSON-строку, если это не строка
+                if not isinstance(result, str):
+                    result_content = json.dumps(result)
+                else:
+                    result_content = result
+
                 tool_responses.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "content": result
+                    "content": result_content
                 })
 
             except Exception as e:
@@ -298,7 +336,7 @@ def text_assistant(message: Message, client: OpenAI) -> str:
 
 
 def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
-    MAX_HISTORY = 20
+    MAX_HISTORY = 15
     if not audio_text or not audio_text.strip():
         return "Не вдалося розпізнати голос. Будь ласка, повторіть ще раз."
 
@@ -342,7 +380,6 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
 
     if ai_message.tool_calls:
         tool_responses = []
-
         for tool_call in ai_message.tool_calls:
             try:
                 tool_name = tool_call.function.name
@@ -351,17 +388,23 @@ def audio_assistant(message: Message, audio_text: str, client: OpenAI) -> str:
 
                 result = functions_register[tool_name](**tool_args)
 
+                # 🔹 Сериализуем словарь в JSON-строку, если это не строка
+                if not isinstance(result, str):
+                    result_content = json.dumps(result)
+                else:
+                    result_content = result
+
                 tool_responses.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "content": result
+                    "content": result_content
                 })
 
             except Exception as e:
                 tool_responses.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "content": f"Помилка при виконанні функції {tool_name}: {str(e)}"
+                    "content": f"Помилка виконання функції {tool_name}: {str(e)}"
                 })
 
         messages_buffer[telegram_id].append({

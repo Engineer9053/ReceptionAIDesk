@@ -19,8 +19,18 @@ client = gspread.authorize(credentials)
 
 calendar = build("calendar", "v3", credentials=credentials)
 
-def create_event(summary: str, description: str, start_time: str, duration_minutes: int, telegram_id: int) -> str:
-    user_timezone = "Europe/Kyiv"
+def create_event(
+    summary: str,
+    description: str,
+    start_time: str,
+    duration_minutes: int,
+    telegram_id: int,
+    user_timezone: str = "Europe/Kyiv"
+) -> dict:
+    """
+    Создаёт событие в Google Calendar и возвращает полный объект события.
+    """
+
     local_tz = ZoneInfo(user_timezone)
     start_local = datetime.fromisoformat(start_time).replace(tzinfo=local_tz)
     end_local = start_local + timedelta(minutes=duration_minutes)
@@ -30,7 +40,7 @@ def create_event(summary: str, description: str, start_time: str, duration_minut
 
     event = {
         'summary': summary,
-        'description': description + "(telegram_id:" + str(telegram_id) + ")",
+        'description': description + f" (telegram_id:{telegram_id})",
         'start': {
             'dateTime': start_utc.isoformat(),
             'timeZone': user_timezone,
@@ -39,12 +49,6 @@ def create_event(summary: str, description: str, start_time: str, duration_minut
             'dateTime': end_utc.isoformat(),
             'timeZone': user_timezone,
         },
-        #'conferenceData': { # генерация ссылки на гугл-мит доступна только для корпоративного аккаунта, как и возможность приглашать гостей не евент
-        #    'createRequest': {
-        #        'requestId': f'meeting-{start_utc.timestamp()}',
-        #        'conferenceSolutionKey': {'type': 'hangoutsMeet'},
-        #    }
-        #},
         'reminders': {
             'useDefault': False,
             'overrides': [
@@ -57,57 +61,67 @@ def create_event(summary: str, description: str, start_time: str, duration_minut
     try:
         event_result = calendar.events().insert(
             calendarId=CALENDAR_ID,
-            #conferenceDataVersion=1, # генерация ссылки на гугл-мит доступна только для корпоративного аккаунта, как и возможность приглашать гостей не евент
             body=event
         ).execute()
 
-        response = f"Виконано!\nСтворено запис на сеанс з '{start_local}' по {end_local} ({user_timezone}). {summary}"
+        # 🔥 возвращаем полный объект события (всё, что вернул API Google Calendar)
+        return {
+            "status": "success",
+            "event": event_result
+        }
 
-    except Exception:
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e)
+        }
 
-        response = "Помилка!\nНа жаль запис не вдалося створити. Спробуй ще раз."
+def check_free_slots(
+    start_time: str,
+    duration_minutes: int = 0,
+    end_time: str = None,
+    user_timezone: str = "Europe/Kyiv",
+    telegram_id: int = 0
+) -> dict:
+    """
+    Проверяет свободные слоты в календаре.
+    Если duration_minutes > 0 — проверка конкретного слота (возвращает is_free),
+    иначе возвращает массив всех свободных интервалов в указанном диапазоне.
+    """
 
-    return response
-
-def check_free_slots(start_time: str, duration_minutes: int = 0, end_time: str = None, user_timezone: str = "Europe/Kyiv", telegram_id: int = 0):
-    print("----------------------------------------------------------------------------- call check_free_slots")
     local_tz = ZoneInfo(user_timezone)
     start_local = datetime.fromisoformat(start_time).replace(tzinfo=local_tz)
-    if duration_minutes > 0:
-        end_local = start_local + timedelta(minutes=duration_minutes)
-    else:
-        end_local = datetime.fromisoformat(end_time).replace(tzinfo=local_tz)
+    end_local = start_local + timedelta(minutes=duration_minutes) if duration_minutes > 0 else datetime.fromisoformat(end_time).replace(tzinfo=local_tz)
 
     start_utc = start_local.astimezone(timezone.utc)
     end_utc = end_local.astimezone(timezone.utc)
 
-    events_result = calendar.freebusy().query(
-        body={
-            "timeMin": start_utc.isoformat().replace('+00:00', 'Z'),
-            "timeMax": end_utc.isoformat().replace('+00:00', 'Z'),
-            "items": [{"id": CALENDAR_ID}]
-        }
-    ).execute()
+    try:
+        events_result = calendar.freebusy().query(
+            body={
+                "timeMin": start_utc.isoformat().replace('+00:00', 'Z'),
+                "timeMax": end_utc.isoformat().replace('+00:00', 'Z'),
+                "items": [{"id": CALENDAR_ID}]
+            }
+        ).execute()
 
-    if duration_minutes > 0: #точечный ответ "да / нет" на вопрос, свободен ли слот, на который хочет записаться клиент
-        busy_times = events_result['calendars'][CALENDAR_ID].get('busy', [])
-        if len(busy_times) == 0:
-            return f"Слот вільний."
-        else:
-            return f"Нажаль, даний слот зайнято, спробуйте інший."
-    else:
-        busy_periods = events_result['calendars'][CALENDAR_ID]['busy']
-        # Преобразуем в datetime объекты в нужной зоне
-        busy_periods = [
+        busy_periods = events_result['calendars'][CALENDAR_ID].get('busy', [])
+
+        if duration_minutes > 0:
+            # Проверка конкретного слота
+            is_free = len(busy_periods) == 0
+            return {"status": "success", "is_free": is_free}
+
+        # Вычисление всех свободных интервалов
+        busy_periods_dt = [
             (
                 datetime.fromisoformat(p['start'].replace('Z', '+00:00')).astimezone(local_tz),
                 datetime.fromisoformat(p['end'].replace('Z', '+00:00')).astimezone(local_tz)
             )
             for p in busy_periods
         ]
-        busy_periods.sort()
+        busy_periods_dt.sort()
 
-        # Настройки рабочего дня (перенести в справочник)
         WORK_START = time(8, 0)
         WORK_END = time(20, 0)
 
@@ -115,135 +129,150 @@ def check_free_slots(start_time: str, duration_minutes: int = 0, end_time: str =
         free_slots = []
 
         while current < end_local:
-            # Пропускаем выходные
-            if current.weekday() == 6:
-                # Переход на следующий день
+            # Выходные
+            if current.weekday() == 6:  # воскресенье
                 current = datetime.combine((current + timedelta(days=1)).date(), WORK_START, tzinfo=local_tz)
                 continue
-
-            if current.weekday() == 5:
+            if current.weekday() == 5:  # суббота
                 WORK_START = time(10, 0)
                 WORK_END = time(18, 0)
 
             day_start = datetime.combine(current.date(), WORK_START, tzinfo=local_tz)
             day_end = datetime.combine(current.date(), WORK_END, tzinfo=local_tz)
-
             pointer = day_start
 
-            for busy_start, busy_end in busy_periods:
-                # Игнорируем busy, если оно не относится к текущему дню
+            for busy_start, busy_end in busy_periods_dt:
                 if busy_end <= pointer or busy_start >= day_end:
                     continue
-
-                # Свободное время перед занятым интервалом
                 if busy_start > pointer:
                     slot_start = pointer
                     slot_end = min(busy_start, day_end)
                     if slot_start < slot_end:
-                        free_slots.append((slot_start, slot_end))
-
+                        free_slots.append({"start": slot_start.isoformat(), "end": slot_end.isoformat()})
                 pointer = max(pointer, busy_end)
 
-            # Если после последнего busy остался свободный конец дня
             if pointer < day_end:
-                free_slots.append((pointer, day_end))
+                free_slots.append({"start": pointer.isoformat(), "end": day_end.isoformat()})
 
-            # Переход на следующий день
             current = datetime.combine((current + timedelta(days=1)).date(), WORK_START, tzinfo=local_tz)
 
-        return "\n".join([
-            f"{i + 1}. {slot_start.strftime('%Y-%m-%d %H:%M')} - {slot_end.strftime('%Y-%m-%d %H:%M')}"
-            for i, (slot_start, slot_end) in enumerate(free_slots)
-        ])
+        return {"status": "success", "free_slots": free_slots}
+
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 
 
+def cancel_event(
+    start_time_local: str,
+    end_time_local: str,
+    telegram_id: int,
+    user_timezone: str = "Europe/Kyiv",
+    query: str = None
+) -> dict:
+    """
+    Ищет и удаляет события в календаре Google для указанного пользователя и диапазона времени.
+    Возвращает список полных данных удалённых событий (чтобы при необходимости их можно было восстановить).
+    """
 
+    tz = ZoneInfo(user_timezone)
+    start_dt = datetime.fromisoformat(start_time_local).replace(tzinfo=tz).astimezone(timezone.utc)
+    end_dt = datetime.fromisoformat(end_time_local).replace(tzinfo=tz).astimezone(timezone.utc)
 
+    start_time_iso = start_dt.isoformat().replace("+00:00", "Z")
+    end_time_iso = end_dt.isoformat().replace("+00:00", "Z")
 
-def cancel_event(start_time_local: str, end_time_local: str, telegram_id: int, user_timezone: str = "Europe/Kyiv", query: str = None):
-        """
-        Ищет события в календаре с учётом часового пояса пользователя.
-        :param start_time_local: Локальное время начала (ISO строка, например, "2025-06-12T00:00:00")
-        :param end_time_local: Локальное время конца
-        :param user_timezone: Таймзона пользователя, например "Europe/Kyiv"
-        :param query: Текст для поиска в summary/description
-        :return: Список найденных событий
-        """
-        tz = ZoneInfo(user_timezone)
-        start_dt = datetime.fromisoformat(start_time_local).replace(tzinfo=tz).astimezone(timezone.utc)
-        end_dt = datetime.fromisoformat(end_time_local).replace(tzinfo=tz).astimezone(timezone.utc)
-
-        start_time_iso = start_dt.isoformat().replace("+00:00", "Z")
-        end_time_iso = end_dt.isoformat().replace("+00:00", "Z")
-
-        response = ""
-
+    try:
         events_result = calendar.events().list(
             calendarId=CALENDAR_ID,
             timeMin=start_time_iso,
             timeMax=end_time_iso,
             timeZone=user_timezone,
-            q=str(telegram_id),
+            q=str(telegram_id),   # фильтруем по telegram_id
             singleEvents=True,
             orderBy="startTime"
         ).execute()
 
         list_events = events_result.get("items", [])
-        for event_row in list_events:
-            try:
-                event_id = event_row['id']
-            except Exception as e:
-                print(f"Подію не знайдено: {e}")
-                return "Подію не знайдено"
-            """
-            Отменяет событие в календаре по его идентификатору.
-            :param event_id: Идентификатор события в календаре Google
-            :return: True, если успешно удалено, False — в случае ошибки
-            """
-            try:
-                calendar.events().delete(calendarId=CALENDAR_ID, eventId=event_id).execute()
-                response += f"Подія ({event_row['start']['dateTime']}) успішно видалена. "
-            except Exception as e:
-                print(f"Помилка при видаленні події: {e}")
-                response += f"Помилка при видаленні події ({event_row['start']['dateTime']})"
 
-        return response
+        if not list_events:
+            return {
+                "status": "not_found",
+                "deleted": [],
+                "message": "No events found for given parameters"
+            }
+
+        deleted = []
+        errors = []
+
+        for event_row in list_events:
+            event_id = event_row.get("id")
+            try:
+                # ⚠️ сохраним полное событие ДО удаления
+                deleted.append(event_row)
+
+                # удаляем событие из Google Calendar
+                calendar.events().delete(calendarId=CALENDAR_ID, eventId=event_id).execute()
+
+            except Exception as e:
+                errors.append({
+                    "event_id": event_id,
+                    "error": str(e)
+                })
+
+        return {
+            "status": "success" if not errors else "partial_success",
+            "deleted": deleted,   # 🔥 массив ПОЛНЫХ событий (все поля summary, description, start, end и т.д.)
+            "errors": errors
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
 
 def find_events_by_time(
-            start_time_local: str,
-            end_time_local: str,
-            user_timezone: str = "Europe/Kyiv",
-            query: str = None
-    ):
+    start_time_local: str,
+    end_time_local: str,
+    telegram_id: int,
+    user_timezone: str = "Europe/Kyiv",
+    query: str = None
+) -> list[dict]:
+    """
+    Ищет события в календаре с учётом часового пояса пользователя.
+    :param start_time_local: Локальное время начала (ISO строка, например, "2025-06-12T00:00:00")
+    :param end_time_local: Локальное время конца
+    :param telegram_id: ID пользователя для поиска в описании
+    :param user_timezone: Таймзона пользователя (например, "Europe/Kyiv")
+    :param query: Дополнительный текст для поиска в summary/description
+    :return: Список найденных событий (полные объекты из Google Calendar API)
+    """
 
-        """
-        Ищет события в календаре с учётом часового пояса пользователя.
-        :param start_time_local: Локальное время начала (ISO строка, например, "2025-06-12T00:00:00")
-        :param end_time_local: Локальное время конца
-        :param user_timezone: Таймзона пользователя, например "Europe/Kyiv"
-        :param query: Текст для поиска в summary/description
-        :return: Список найденных событий
-        """
-        print("----------------------------------------------------------------------------- call find_events_by_time")
-        tz = ZoneInfo(user_timezone)
-        start_dt = datetime.fromisoformat(start_time_local).replace(tzinfo=tz).astimezone(timezone.utc)
-        end_dt = datetime.fromisoformat(end_time_local).replace(tzinfo=tz).astimezone(timezone.utc)
+    tz = ZoneInfo(user_timezone)
+    start_dt = datetime.fromisoformat(start_time_local).replace(tzinfo=tz).astimezone(timezone.utc)
+    end_dt = datetime.fromisoformat(end_time_local).replace(tzinfo=tz).astimezone(timezone.utc)
 
-        start_time_iso = start_dt.isoformat().replace("+00:00", "Z")
-        end_time_iso = end_dt.isoformat().replace("+00:00", "Z")
+    start_time_iso = start_dt.isoformat().replace("+00:00", "Z")
+    end_time_iso = end_dt.isoformat().replace("+00:00", "Z")
 
+    try:
         events_result = calendar.events().list(
             calendarId=CALENDAR_ID,
             timeMin=start_time_iso,
             timeMax=end_time_iso,
             timeZone=user_timezone,
-            q=query,
+            q=f"{telegram_id} {query}" if query else str(telegram_id),
             singleEvents=True,
             orderBy="startTime"
         ).execute()
 
-        return events_result.get("items", [])
+        list_events = events_result.get("items", [])
+        return list_events
 
+    except Exception as e:
+        print(f"Ошибка при поиске событий: {e}")
+        return []
 
 
 def read_google_sheet_as_dict(sheet_name: str = "Price", telegram_id: int = 0) -> str:
@@ -319,9 +348,9 @@ def upsert_services(
 
 
 functions_register = {
-    # "read_google_sheet_as_dict": read_google_sheet_as_dict,
     "read_google_sheet_as_dict": read_google_sheet_as_dict,
     "check_free_slots": check_free_slots,
     "create_event": create_event,
-    "cancel_event": cancel_event
+    "cancel_event": cancel_event,
+    "find_events_by_time": find_events_by_time
 }
